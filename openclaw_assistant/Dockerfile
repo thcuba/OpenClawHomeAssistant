@@ -43,8 +43,10 @@ RUN mkdir -p /etc/apt/keyrings \
     > /etc/apt/sources.list.d/nodesource.list \
  && apt-get update \
  && apt-get install -y --no-install-recommends nodejs \
- && node -v \
- && node -v | grep -E '^v22\.' \
+ && NODE_VERSION="$(node -v)" \
+ && echo "$NODE_VERSION" \
+ && echo "$NODE_VERSION" | grep -E '^v22\.' \
+ && rm -f /etc/apt/sources.list.d/nodesource.list /etc/apt/keyrings/nodesource.gpg \
  && apt-get clean \
  && rm -rf /var/lib/apt/lists/*
 
