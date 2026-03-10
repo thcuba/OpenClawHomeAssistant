@@ -374,8 +374,9 @@ if [ ! -e /data ]; then
   ln -s /config /data || true
 fi
 
-# Ensure these exist so cleanup doesn't fail
-mkdir -p /config/.openclaw/agents/main/sessions || true
+# Ensure the agents base directory exists so cleanup scans work even before first run.
+# Do NOT pre-create agent-specific directories; OpenClaw creates them as needed.
+mkdir -p /config/.openclaw/agents || true
 
 # ------------------------------------------------------------------------------
 # SINGLE-INSTANCE GUARD (prevents multiple gateway runs racing each other)
@@ -397,26 +398,39 @@ gateway_running() {
 }
 
 cleanup_session_locks() {
-  local sessions_dir="/config/.openclaw/agents/main/sessions"
-  local glob1="${sessions_dir}"/*.jsonl.lock
+  local agents_dir="/config/.openclaw/agents"
+  local total_locks=0
+  local cleaned_dirs=()
 
+  # Scan all agent session directories, not just 'main'.
+  # This is needed for users who have gateway.forcedAgentId set to a non-default agent.
   shopt -s nullglob
-  local locks=( $glob1 )
+  local all_locks=()
+  for agent_sessions_dir in "${agents_dir}"/*/sessions; do
+    local agent_locks=( "${agent_sessions_dir}"/*.jsonl.lock )
+    if [ ${#agent_locks[@]} -gt 0 ]; then
+      all_locks+=( "${agent_locks[@]}" )
+      cleaned_dirs+=( "$agent_sessions_dir" )
+      total_locks=$(( total_locks + ${#agent_locks[@]} ))
+    fi
+  done
   shopt -u nullglob
 
-  if [ ${#locks[@]} -eq 0 ]; then
+  if [ "$total_locks" -eq 0 ]; then
     return 0
   fi
 
   # If gateway is running, do NOT remove locks automatically (could be real).
   if gateway_running; then
     echo "INFO: Gateway appears to be running; leaving session lock files untouched."
-    echo "INFO: Locks present: ${#locks[@]}"
+    echo "INFO: Locks present: $total_locks"
     return 0
   fi
 
-  echo "INFO: Removing stale session lock files (${#locks[@]}) from ${sessions_dir}"
-  rm -f "${sessions_dir}"/*.jsonl.lock || true
+  echo "INFO: Removing stale session lock files ($total_locks) across agents: ${cleaned_dirs[*]}"
+  for agent_sessions_dir in "${cleaned_dirs[@]}"; do
+    rm -f "${agent_sessions_dir}"/*.jsonl.lock || true
+  done
 }
 
 if [ "$CLEAN_LOCKS_ON_START" = "true" ]; then
